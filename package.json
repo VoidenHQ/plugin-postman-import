@@ -1,0 +1,22 @@
+{
+  "name": "@voiden/plugin-postman-import",
+  "version": "1.0.2",
+  "type": "module",
+  "private": false,
+  "description": "Seamlessly migrate from Postman by importing v2.1 collections and automatically converting them to native Voiden request files with full support for nested folders, environment variables, headers, auth, and all request body types",
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "node build.mjs",
+    "release": "node build.mjs && node generate-manifest.mjs"
+  },
+  "peerDependencies": {
+    "@voiden/sdk": "^1.0.10-beta.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@voiden/sdk": "1.0.10-beta.1",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}
