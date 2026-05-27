@@ -2,13 +2,11 @@
   "id": "postman-import",
   "name": "Postman Collection Importer",
   "description": "Seamlessly migrate from Postman by importing v2.1 collections and automatically converting them to native Voiden request files with full support for nested folders, environment variables, headers, auth, and all request body types",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "voidenVersion": ">=2.0.0",
   "author": "Voiden Team",
-  "enabled": true,
   "priority": 50,
   "readme": "Import Postman collections (v2.1) and automatically convert them into Voiden .void request files. Supports nested folders, headers, request bodies, and query parameters.",
-
   "capabilities": {
     "ui": {
       "buttons": [
@@ -22,7 +20,6 @@
       ],
       "description": "Adds import button to left sidebar for easy collection import"
     },
-
     "fileSystem": {
       "operations": [
         "create-directory",
@@ -30,7 +27,6 @@
       ],
       "description": "Creates folder structure and .void files from Postman collection hierarchy"
     },
-
     "integration": {
       "dependencies": [
         {
@@ -42,13 +38,11 @@
       "description": "Depends on voiden-rest-api extension for REST block generation"
     }
   },
-
   "dependencies": {
     "core": "^1.0.0",
     "sdk": "^1.0.0",
     "voiden-rest-api": "^1.0.0"
   },
-
   "features": [
     "Import Postman Collection v2.1 JSON files",
     "Automatically create folder structure matching collection hierarchy",
