@@ -14,6 +14,7 @@ export interface VoidenApiHelpers {
   createMultipartTableNode: (formData: [string, string][]) => any;
   createUrlTableNode: (formData: [string, string][]) => any;
   createQueryTableNode: (params: [string, string][]) => any;
+  createPathParamsTableNode: (params: [string, string][]) => any;
   convertToVoidMarkdown: (jsonContent: any) => Promise<string>;
   convertBlocksToVoidFile: (title: string, blocks: any[]) => string;
   insertParagraphAfterRequestBlocks: (content: any[]) => any[];

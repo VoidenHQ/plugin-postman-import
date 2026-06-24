@@ -1,10 +1,11 @@
 import type {
   PostmanCollection,
+  PostmanEnvironmentExport,
   PostmanRequest,
   PostmanRequestBody,
   PostmanItem,
 } from "./types";
-import { isPostmanFolder, normalizePostmanUrl } from "./types";
+import { isPostmanFolder, isPostmanEnvironmentExport, normalizePostmanUrl, convertColonPathParams, extractPostmanPathParams } from "./types";
 import { getVoidenApiHelpers } from "./useVoidenApiHelpers";
 
 
@@ -87,7 +88,7 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
       type: 'request',
       content: [
         helpers.createMethodNode(data.request.method),
-        helpers.createUrlNode(normalizePostmanUrl(data.request.url))
+        helpers.createUrlNode(convertColonPathParams(normalizePostmanUrl(data.request.url)))
       ]
     };
     blocks.push(requestBlock);
@@ -103,6 +104,12 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
         allHeaders.map(h => [h.key, h.value] as [string, string])
       );
       blocks.push(headersBlock);
+    }
+
+    // 2b. Path parameters — from Postman's url.variable, or inferred from :name segments
+    const pathParams = extractPostmanPathParams(data.request.url);
+    if (pathParams.length > 0) {
+      blocks.push(helpers.createPathParamsTableNode(pathParams));
     }
 
     // 3. Query parameters (v2.1.0 format)
@@ -257,6 +264,28 @@ export const processItems = async (
 };
 
 /**
+ * Import a Postman environment or globals export as project environment variables
+ * @param env - Parsed Postman environment/globals export
+ */
+export const importPostmanEnvironment = async (env: PostmanEnvironmentExport) => {
+  const variables = (env.values || [])
+    .filter((v) => v.enabled !== false)
+    .map((v) => ({ key: v.key, value: v.value }));
+
+  if (variables.length > 0) {
+    //@ts-ignore
+    await (window as any).electron?.env?.extendEnvs(`${env.name || "Postman"} environment`, variables);
+  }
+
+  return {
+    success: true,
+    message: variables.length > 0
+      ? `Imported ${variables.length} environment variable(s)`
+      : "No enabled variables found to import",
+  };
+};
+
+/**
  * Main function to import a Postman collection
  * @param collection - JSON string of the Postman collection
  * @param activeProject - Path to the active project directory
@@ -270,10 +299,16 @@ export const importPostmanCollection = async (
   signal?: { cancelled: boolean },
 ) => {
   try {
-    const json: PostmanCollection = JSON.parse(collection);
+    const json: PostmanCollection | PostmanEnvironmentExport = JSON.parse(collection);
 
     if (!activeProject) {
       throw new Error("No active project found");
+    }
+
+    if (isPostmanEnvironmentExport(json)) {
+      const result = await importPostmanEnvironment(json);
+      onProgress?.(1, 1);
+      return result;
     }
 
     // Count total items first

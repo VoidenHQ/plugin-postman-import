@@ -1,7 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { importPostmanCollection } from "../utils/converter";
+import { isPostmanEnvironmentExport } from "../utils/types";
 import { X, XCircle } from "lucide-react";
+
+/**
+ * Best-effort detection of whether content is a Postman environment/globals
+ * export, used purely to pick the right button copy. Returns false on
+ * anything that doesn't parse (e.g. content not loaded yet for large files).
+ */
+function looksLikeEnvironmentExport(content: string): boolean {
+  if (!content) return false;
+  try {
+    return isPostmanEnvironmentExport(JSON.parse(content));
+  } catch {
+    return false;
+  }
+}
 
 interface PostmanImportButtonProps {
   tab: {
@@ -20,6 +35,7 @@ interface ImportState {
   isImporting: boolean;
   progress: { current: number; total: number };
   error: string | null;
+  successMessage: string | null;
 }
 const importStateCache = new Map<string, ImportState>();
 // Module-level cancel signals keyed by tabId so cancel survives remount too
@@ -31,12 +47,21 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
   const [isImporting, setIsImporting] = useState(cached?.isImporting ?? false);
   const [error, setError] = useState<string | null>(cached?.error ?? null);
   const [isErrorVisible, setIsErrorVisible] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(cached?.successMessage ?? null);
+  const [isEnvironment, setIsEnvironment] = useState(() => looksLikeEnvironmentExport(tab.content));
   const cancelSignalRef = useRef<{ cancelled: boolean } | null>(null);
 
   // Keep cache in sync with state
   useEffect(() => {
-    importStateCache.set(tab.tabId, { isImporting, progress, error });
-  }, [tab.tabId, isImporting, progress, error]);
+    importStateCache.set(tab.tabId, { isImporting, progress, error, successMessage });
+  }, [tab.tabId, isImporting, progress, error, successMessage]);
+
+  // Re-check in case content streams in after mount (large files load tab.content lazily)
+  useEffect(() => {
+    if (tab.content) {
+      setIsEnvironment(looksLikeEnvironmentExport(tab.content));
+    }
+  }, [tab.content]);
 
   const queryClient = useQueryClient();
 
@@ -74,6 +99,7 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
     try {
       setError(null);
       setIsErrorVisible(false);
+      setSuccessMessage(null);
       setIsImporting(true);
       setProgress({ current: 0, total: 0 });
 
@@ -108,15 +134,19 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
         return;
       }
 
+      let parsed: unknown;
       try {
-        JSON.parse(content);
+        parsed = JSON.parse(content);
       } catch {
         setError("Invalid JSON format");
         setIsImporting(false);
         return;
       }
 
-      await importPostmanCollection(content, activeProject, (current, total) => {
+      const isEnvImport = isPostmanEnvironmentExport(parsed);
+      setIsEnvironment(isEnvImport);
+
+      const result = await importPostmanCollection(content, activeProject, (current, total) => {
         setProgress({ current, total });
       }, (itemName, error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -126,8 +156,13 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
       // If cancelled mid-way, don't show success state
       if (signal.cancelled) return;
 
-      // Success - reset state and clear persisted cache
-      setProgress({ current: 0, total: 0 });
+      // Success - for environment imports, surface the variable-count message;
+      // collection imports keep showing the "Generated N files" progress label.
+      if (isEnvImport) {
+        setSuccessMessage(result?.message ?? "Environment imported");
+      } else {
+        setProgress({ current: 0, total: 0 });
+      }
       setIsImporting(false);
       importStateCache.delete(tab.tabId);
       cancelSignals.delete(tab.tabId);
@@ -153,6 +188,12 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
   };
 
   const getButtonText = () => {
+    if (isEnvironment) {
+      if (isImporting) return "Importing variables...";
+      if (successMessage) return successMessage;
+      return "Import Environment Variables";
+    }
+
     if (isImporting && progress.current > 0 && progress.current < progress.total) {
       return `Generating files... ${progress.current}/${progress.total}`;
     }
@@ -167,6 +208,12 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
   const getButtonClass = () => {
     const baseClass = "px-2 py-0.5 rounded-sm text-sm transition-all duration-200";
 
+    if (isEnvironment) {
+      if (isImporting) return `${baseClass} bg-yellow-500 hover:bg-yellow-600 text-black cursor-wait`;
+      if (successMessage) return `${baseClass} bg-green-500 hover:bg-green-600 text-white`;
+      return `${baseClass} bg-panel hover:bg-active text-foreground`;
+    }
+
     if (isImporting && progress.current > 0 && progress.current < progress.total) {
       return `${baseClass} bg-yellow-500 hover:bg-yellow-600 text-black cursor-wait`;
     }
@@ -178,7 +225,7 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
     return `${baseClass} bg-panel hover:bg-active text-foreground`;
   };
 
-  const isInProgress = isImporting && progress.current > 0 && progress.current < progress.total;
+  const isInProgress = isImporting && (isEnvironment || (progress.current > 0 && progress.current < progress.total));
 
   return (
     <div className="flex flex-col gap-1">
@@ -188,13 +235,13 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
             className={getButtonClass()}
             onClick={handleImport}
             disabled={isInProgress}
-            title={isInProgress ? "Import in progress..." : "Import Postman collection"}
+            title={isInProgress ? "Import in progress..." : isEnvironment ? "Import Postman environment variables" : "Import Postman collection"}
           >
             {getButtonText()}
           </button>
 
           {/* Cancel button — only visible while import is running */}
-          {isImporting && (
+          {isImporting && !isEnvironment && (
             <button
               onClick={handleCancel}
               title="Cancel"
@@ -205,7 +252,7 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
           )}
 
           {/* Progress percentage */}
-          {isImporting && progress.current > 0 && progress.total > 0 && (
+          {!isEnvironment && isImporting && progress.current > 0 && progress.total > 0 && (
             <div className="text-xs text-gray-500">
               {Math.round((progress.current / progress.total) * 100)}%
             </div>

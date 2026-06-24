@@ -1,27 +1,18 @@
 [
   {
-    "version": "v1.0.5",
-    "date": "29/05/2026",
-    "title": "Build Fix",
-    "changes": {
-      "Fixed": [
-        "Remove catch-all shim from build pipeline for correct dependency bundling"
-      ]
-    }
-  },
-  {
     "version": "v1.0.3",
-    "date": "27/05/2026",
-    "title": "Stability Update",
+    "date": "24/06/2026",
+    "title": "Path Params & Environment Import",
     "changes": {
-      "Fixed": [
-        "Import no longer fails on collections with empty folder descriptions",
-        "Pre-request scripts are preserved as comments during import"
+      "Added": [
+        "Colon-style path segments (e.g. :id) in request URLs are converted to brace-style placeholders (e.g. {id})",
+        "Path parameters are extracted from Postman's url.variable list (or inferred from :name segments when absent) and imported as a path-table block with their values",
+        "Postman environment and globals exports can now be imported directly — enabled variables are written into the project's .env files, using the environment name as the comment header"
       ]
     }
   },
   {
-    "version": "v1.0.0",
+    "version": "v1.0.2",
     "date": "01/04/2026",
     "title": "Initial Release",
     "description": "Import Postman Collection v2.0 and v2.1 files into Voiden.",
