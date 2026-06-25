@@ -1,5 +1,21 @@
 [
   {
+    "version": "v1.0.4",
+    "date": "24/06/2026",
+    "title": "Auth, Scripts, File Uploads & GraphQL",
+    "changes": {
+      "Added": [
+        "Auth: basic/bearer/apikey/oauth2/oauth1/digest/ntlm/awsv4/hawk are now converted into a native auth block instead of only basic/bearer/apikey being flattened into headers",
+        "Pre-request and test scripts are imported as commented-out pre_script/post_script blocks (Postman's pm.* API isn't translated automatically since Voiden scripts use a different voiden.*/vd.* API — review and adapt before enabling)",
+        "Multipart form-data file fields (type: file) are imported as fileLink attachments when the file still exists at its original path on this machine, instead of being silently dropped",
+        "GraphQL request bodies (body.mode: graphql) are converted into gqlquery/gqlvariables blocks instead of being skipped"
+      ],
+      "Changed": [
+        "Completion state no longer leaves the import button stuck green — it now shows a check icon with a brief \"Completed\"-style message for 2 seconds (plus a toast notification) before resetting to idle"
+      ]
+    }
+  },
+  {
     "version": "v1.0.3",
     "date": "24/06/2026",
     "title": "Path Params & Environment Import",

@@ -1,11 +1,13 @@
 import type {
+  PostmanAuth,
   PostmanCollection,
   PostmanEnvironmentExport,
+  PostmanFormParam,
   PostmanRequest,
   PostmanRequestBody,
   PostmanItem,
 } from "./types";
-import { isPostmanFolder, isPostmanEnvironmentExport, normalizePostmanUrl, convertColonPathParams, extractPostmanPathParams } from "./types";
+import { isPostmanFolder, isPostmanEnvironmentExport, normalizePostmanUrl, convertColonPathParams, extractPostmanPathParams, getAuthParam } from "./types";
 import { getVoidenApiHelpers } from "./useVoidenApiHelpers";
 
 
@@ -24,27 +26,216 @@ export function sanitizeName(name: string): string {
 }
 
 /**
- * Convert Postman auth to HTTP headers
+ * Build a tableCell node. `content` is the cell's paragraph content
+ * (plain text, or a fileLink node for multipart file fields).
  */
-function convertAuthToHeaders(auth: PostmanRequest['request']['auth']): Array<{ key: string; value: string }> {
-  if (!auth) return [];
+function makeTableCell(content: any[]) {
+  return {
+    type: "tableCell",
+    attrs: { colspan: 1, rowspan: 1, colwidth: null },
+    content: [{ type: "paragraph", content }],
+  };
+}
 
-  const headers: Array<{ key: string; value: string }> = [];
+function makeTextCell(text?: string) {
+  return makeTableCell(text ? [{ type: "text", text }] : []);
+}
 
-  if (auth.type === 'basic' && auth.basic) {
-    // Basic auth: base64 encode username:password
-    const credentials = `${auth.basic.username}:${auth.basic.password}`;
-    const encoded = btoa(credentials);
-    headers.push({ key: 'Authorization', value: `Basic ${encoded}` });
-  } else if (auth.type === 'bearer' && auth.bearer) {
-    // Bearer token
-    headers.push({ key: 'Authorization', value: `Bearer ${auth.bearer.token}` });
-  } else if (auth.type === 'apikey' && auth.apikey) {
-    // API key - add as header with specified key
-    headers.push({ key: auth.apikey.key, value: auth.apikey.value });
+/**
+ * Build a `table` node (the same shape voiden-rest-api's convertDataToTableNode
+ * produces) from plain text rows.
+ */
+function buildTableContent(rows: Array<[string, string]>) {
+  return [
+    {
+      type: "table",
+      content: rows.map(([key, value]) => ({
+        type: "tableRow",
+        attrs: { disabled: false },
+        content: [makeTextCell(key), makeTextCell(value)],
+      })),
+    },
+  ];
+}
+
+/**
+ * Convert Postman's `auth` config into a Voiden `auth` block.
+ * Postman stores every auth sub-config (basic, bearer, oauth2, ...) as an
+ * array of {key, value} pairs — see getAuthParam in ./types.
+ */
+function buildAuthBlock(auth?: PostmanAuth): any | null {
+  if (!auth || !auth.type || auth.type === "noauth") return null;
+
+  const rows: Array<[string, string]> = [];
+  let authType: string;
+
+  switch (auth.type) {
+    case "basic": {
+      authType = "basic";
+      const username = getAuthParam(auth.basic, "username");
+      const password = getAuthParam(auth.basic, "password");
+      if (username !== undefined) rows.push(["username", username]);
+      if (password !== undefined) rows.push(["password", password]);
+      break;
+    }
+    case "bearer": {
+      authType = "bearer";
+      const token = getAuthParam(auth.bearer, "token");
+      if (token !== undefined) rows.push(["token", token]);
+      break;
+    }
+    case "apikey": {
+      authType = "apiKey";
+      const key = getAuthParam(auth.apikey, "key");
+      const value = getAuthParam(auth.apikey, "value");
+      const addTo = getAuthParam(auth.apikey, "in") || "header";
+      if (key !== undefined) rows.push(["key", key]);
+      if (value !== undefined) rows.push(["value", value]);
+      rows.push(["add_to", addTo]);
+      break;
+    }
+    case "oauth2": {
+      authType = "oauth2";
+      const accessToken = getAuthParam(auth.oauth2, "accessToken");
+      const tokenType = getAuthParam(auth.oauth2, "tokenType") || "Bearer";
+      const headerPrefix = getAuthParam(auth.oauth2, "headerPrefix") || "Bearer";
+      if (accessToken !== undefined) rows.push(["access_token", accessToken]);
+      rows.push(["token_type", tokenType]);
+      rows.push(["header_prefix", headerPrefix]);
+      break;
+    }
+    case "oauth1": {
+      authType = "oauth1";
+      const consumerKey = getAuthParam(auth.oauth1, "consumerKey");
+      const consumerSecret = getAuthParam(auth.oauth1, "consumerSecret");
+      const accessToken = getAuthParam(auth.oauth1, "token");
+      const tokenSecret = getAuthParam(auth.oauth1, "tokenSecret");
+      const signatureMethod = getAuthParam(auth.oauth1, "signatureMethod") || "HMAC-SHA1";
+      if (consumerKey !== undefined) rows.push(["consumer_key", consumerKey]);
+      if (consumerSecret !== undefined) rows.push(["consumer_secret", consumerSecret]);
+      if (accessToken !== undefined) rows.push(["access_token", accessToken]);
+      if (tokenSecret !== undefined) rows.push(["token_secret", tokenSecret]);
+      rows.push(["signature_method", signatureMethod]);
+      break;
+    }
+    case "digest": {
+      authType = "digest";
+      const username = getAuthParam(auth.digest, "username");
+      const password = getAuthParam(auth.digest, "password");
+      if (username !== undefined) rows.push(["username", username]);
+      if (password !== undefined) rows.push(["password", password]);
+      break;
+    }
+    case "awsv4": {
+      authType = "awsSignature";
+      const accessKey = getAuthParam(auth.awsv4, "accessKey");
+      const secretKey = getAuthParam(auth.awsv4, "secretKey");
+      const region = getAuthParam(auth.awsv4, "region") || "us-east-1";
+      const service = getAuthParam(auth.awsv4, "service") || "execute-api";
+      const sessionToken = getAuthParam(auth.awsv4, "sessionToken");
+      if (accessKey !== undefined) rows.push(["access_key", accessKey]);
+      if (secretKey !== undefined) rows.push(["secret_key", secretKey]);
+      rows.push(["region", region]);
+      rows.push(["service", service]);
+      if (sessionToken !== undefined) rows.push(["session_token", sessionToken]);
+      break;
+    }
+    case "ntlm": {
+      authType = "ntlm";
+      const username = getAuthParam(auth.ntlm, "username");
+      const password = getAuthParam(auth.ntlm, "password");
+      const domain = getAuthParam(auth.ntlm, "domain");
+      if (username !== undefined) rows.push(["username", username]);
+      if (password !== undefined) rows.push(["password", password]);
+      if (domain !== undefined) rows.push(["domain", domain]);
+      break;
+    }
+    case "hawk": {
+      authType = "hawk";
+      const id = getAuthParam(auth.hawk, "authId");
+      const key = getAuthParam(auth.hawk, "authKey");
+      const algorithm = getAuthParam(auth.hawk, "algorithm") || "sha256";
+      if (id !== undefined) rows.push(["id", id]);
+      if (key !== undefined) rows.push(["key", key]);
+      rows.push(["algorithm", algorithm]);
+      break;
+    }
+    default:
+      // Unsupported type (e.g. edgegrid) — skip rather than guess at a shape
+      return null;
   }
 
-  return headers;
+  if (rows.length === 0) return null;
+
+  return {
+    type: "auth",
+    attrs: { authType },
+    content: buildTableContent(rows),
+  };
+}
+
+/**
+ * Build a single multipart-table row, resolving file fields (type: "file")
+ * to a fileLink node when the file exists on this machine, since Postman's
+ * `src` path almost always points at the exporting user's filesystem.
+ */
+async function buildMultipartRow(field: PostmanFormParam): Promise<any> {
+  const keyCell = makeTextCell(field.key);
+
+  if (field.type === "file") {
+    const src = Array.isArray(field.src) ? field.src[0] : field.src;
+    if (src) {
+      try {
+        const result = await (window as any).electron?.files?.hash?.(src);
+        if (result?.exists) {
+          const filename = src.split(/[\\/]/).pop() ?? src;
+          return {
+            type: "tableRow",
+            attrs: { disabled: false },
+            content: [keyCell, makeTableCell([{ type: "fileLink", attrs: { filePath: src, filename, isExternal: true } }])],
+          };
+        }
+      } catch { /* best-effort existence check */ }
+    }
+    // File isn't resolvable on this machine — keep the original path visible as text
+    // rather than silently dropping it.
+    return { type: "tableRow", attrs: { disabled: false }, content: [keyCell, makeTextCell(src || "")] };
+  }
+
+  return { type: "tableRow", attrs: { disabled: false }, content: [keyCell, makeTextCell(field.value || "")] };
+}
+
+/**
+ * Detect a GraphQL operation's type from its query text.
+ */
+function detectGraphqlOperationType(query: string): "query" | "mutation" | "subscription" {
+  const match = query.match(/\b(query|mutation|subscription)\b/);
+  return (match?.[1] as "query" | "mutation" | "subscription") || "query";
+}
+
+/**
+ * Convert a Postman pre-request/test script into a non-executing Voiden
+ * pre_script/post_script block. Postman scripts use the pm.* API while
+ * Voiden scripts use a different voiden.* / vd.* API, so a literal translation
+ * isn't safe to automate — the script is commented out so it's preserved
+ * for manual review instead of erroring or silently disappearing.
+ */
+function buildScriptBlock(type: "pre_script" | "post_script", exec: string[] | string | undefined): any | null {
+  const lines = Array.isArray(exec) ? exec : typeof exec === "string" ? exec.split(/\r?\n/) : [];
+  if (!lines.some((line) => line.trim() !== "")) return null;
+
+  const header = [
+    "// Imported from a Postman pm.* script.",
+    "// Commented out: Voiden scripts use the voiden.* / vd.* API, not pm.*.",
+    "// Review and adapt this logic, then uncomment — see the scripting skill docs.",
+    "",
+  ];
+  const commented = lines.map((line) => (line.trim() === "" ? "" : `// ${line}`));
+
+  return {
+    type,
+    attrs: { language: "javascript", body: [...header, ...commented].join("\n") },
+  };
 }
 
 /**
@@ -93,26 +284,37 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
     };
     blocks.push(requestBlock);
 
-    // 2. Headers (merge auth headers with existing headers)
-    // Filter out disabled headers
-    const authHeaders = convertAuthToHeaders(data.request.auth);
-    const activeHeaders = (data.request.header || []).filter(h => !h.disabled);
-    const allHeaders = [...authHeaders, ...activeHeaders];
+    // 2. Auth — dedicated auth block (covers basic/bearer/apikey/oauth2/oauth1/digest/ntlm/awsv4/hawk)
+    const authBlock = buildAuthBlock(data.request.auth);
+    if (authBlock) {
+      blocks.push(authBlock);
+    }
 
-    if (allHeaders.length > 0) {
+    // 2a. Pre-request scripts — imported commented-out (see buildScriptBlock)
+    for (const event of data.event || []) {
+      if (event.disabled || event.listen !== "prerequest") continue;
+      const scriptBlock = buildScriptBlock("pre_script", event.script?.exec);
+      if (scriptBlock) blocks.push(scriptBlock);
+    }
+
+    // 3. Headers
+    // Filter out disabled headers
+    const activeHeaders = (data.request.header || []).filter(h => !h.disabled);
+
+    if (activeHeaders.length > 0) {
       const headersBlock = helpers.createHeadersTableNode(
-        allHeaders.map(h => [h.key, h.value] as [string, string])
+        activeHeaders.map(h => [h.key, h.value] as [string, string])
       );
       blocks.push(headersBlock);
     }
 
-    // 2b. Path parameters — from Postman's url.variable, or inferred from :name segments
+    // 3b. Path parameters — from Postman's url.variable, or inferred from :name segments
     const pathParams = extractPostmanPathParams(data.request.url);
     if (pathParams.length > 0) {
       blocks.push(helpers.createPathParamsTableNode(pathParams));
     }
 
-    // 3. Query parameters (v2.1.0 format)
+    // 3c. Query parameters (v2.1.0 format)
     // Filter out disabled query params
     if (typeof data.request.url === 'object' && data.request.url.query && data.request.url.query.length > 0) {
       const activeQueries = data.request.url.query.filter(q => !q.disabled);
@@ -159,12 +361,41 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
       else if (body.mode === "formdata" && body.formdata && body.formdata.length > 0) {
         const activeFormData = body.formdata.filter(f => !f.disabled);
         if (activeFormData.length > 0) {
-          const multipartBlock = helpers.createMultipartTableNode(
-            activeFormData.map(f => [f.key, f.value] as [string, string])
-          );
-          blocks.push(multipartBlock);
+          if (activeFormData.some(f => f.type === "file")) {
+            // At least one file field — build the table manually so file
+            // paths become fileLink nodes instead of being dropped as text.
+            const rows = await Promise.all(activeFormData.map(buildMultipartRow));
+            blocks.push({ type: "multipart-table", content: [{ type: "table", content: rows }] });
+          } else {
+            const multipartBlock = helpers.createMultipartTableNode(
+              activeFormData.map(f => [f.key, f.value || ""] as [string, string])
+            );
+            blocks.push(multipartBlock);
+          }
         }
       }
+
+      // 4d. GraphQL body
+      else if (body.mode === "graphql" && body.graphql?.query) {
+        blocks.push({
+          type: "gqlquery",
+          attrs: {
+            body: body.graphql.query,
+            operationType: detectGraphqlOperationType(body.graphql.query),
+            schemaUrl: null,
+          },
+        });
+        if (body.graphql.variables) {
+          blocks.push({ type: "gqlvariables", attrs: { body: body.graphql.variables } });
+        }
+      }
+    }
+
+    // 5. Post-response (test) scripts — imported commented-out (see buildScriptBlock)
+    for (const event of data.event || []) {
+      if (event.disabled || event.listen !== "test") continue;
+      const scriptBlock = buildScriptBlock("post_script", event.script?.exec);
+      if (scriptBlock) blocks.push(scriptBlock);
     }
 
     // Use helper to convert blocks to .void file format
@@ -273,8 +504,9 @@ export const importPostmanEnvironment = async (env: PostmanEnvironmentExport) =>
     .map((v) => ({ key: v.key, value: v.value }));
 
   if (variables.length > 0) {
+    const envName = env.name || "Postman";
     //@ts-ignore
-    await (window as any).electron?.env?.extendEnvs(`${env.name || "Postman"} environment`, variables);
+    await (window as any).electron?.env?.extendEnvs(`${envName} environment`, variables, envName);
   }
 
   return {

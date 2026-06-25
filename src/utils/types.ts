@@ -26,14 +26,17 @@ export interface PostmanFolder {
 export interface PostmanRequest {
   name: string;
   request: PostmanRequestDetail;
-  event?: {
-    listen: string;
-    script: {
-      exec: string[];
-      type: string;
-      packages: Record<string, string>;
-    };
-  }[];
+  event?: PostmanEvent[];
+}
+
+export interface PostmanEvent {
+  listen: string; // "prerequest" | "test"
+  disabled?: boolean;
+  script: {
+    exec: string[] | string;
+    type?: string;
+    packages?: Record<string, string>;
+  };
 }
 
 export interface PostmanRequestDetail {
@@ -57,6 +60,7 @@ export interface PostmanRequestBody {
   raw?: string;
   formdata?: PostmanFormParam[];
   urlencoded?: PostmanFormParam[];
+  graphql?: PostmanGraphqlBody;
   options?: {
     raw?: {
       language?: string;
@@ -66,9 +70,15 @@ export interface PostmanRequestBody {
 
 export interface PostmanFormParam {
   key: string;
-  value: string;
-  type?: string;
+  value?: string;
+  type?: 'text' | 'file';
+  src?: string | string[] | null; // present when type === 'file'
   disabled?: boolean;
+}
+
+export interface PostmanGraphqlBody {
+  query: string;
+  variables?: string; // JSON-encoded string, as stored by Postman
 }
 
 export interface PostmanUrl {
@@ -115,19 +125,46 @@ export function isPostmanEnvironmentExport(json: any): json is PostmanEnvironmen
   return json?._postman_variable_scope === 'environment' || json?._postman_variable_scope === 'globals';
 }
 
+/**
+ * Postman represents every auth sub-config (basic, bearer, apikey, oauth2, ...)
+ * as an array of {key, value} pairs — not a fixed-shape object.
+ * e.g. auth.basic = [{key:"username", value:"u"}, {key:"password", value:"p"}]
+ */
+export interface PostmanAuthParam {
+  key: string;
+  value?: any;
+  type?: string;
+}
+
 export interface PostmanAuth {
-  type: string;
-  basic?: {
-    username: string;
-    password: string;
-  };
-  bearer?: {
-    token: string;
-  };
-  apikey?: {
-    key: string;
-    value: string;
-  };
+  type: string; // noauth | basic | bearer | apikey | oauth2 | oauth1 | digest | ntlm | awsv4 | hawk | edgegrid
+  noauth?: any;
+  basic?: PostmanAuthParam[];
+  bearer?: PostmanAuthParam[];
+  apikey?: PostmanAuthParam[];
+  oauth2?: PostmanAuthParam[];
+  oauth1?: PostmanAuthParam[];
+  digest?: PostmanAuthParam[];
+  ntlm?: PostmanAuthParam[];
+  awsv4?: PostmanAuthParam[];
+  hawk?: PostmanAuthParam[];
+}
+
+/**
+ * Read a named field out of a Postman auth sub-config. Handles the real
+ * array-of-{key,value} shape, and tolerates a flat object as a fallback
+ * in case of hand-edited or non-standard collection files.
+ */
+export function getAuthParam(source: PostmanAuthParam[] | Record<string, any> | undefined, key: string): string | undefined {
+  if (!source) return undefined;
+  if (Array.isArray(source)) {
+    const found = source.find((p) => p?.key === key);
+    return found?.value !== undefined && found?.value !== null ? String(found.value) : undefined;
+  }
+  if (typeof source === 'object' && source[key] !== undefined && source[key] !== null) {
+    return String(source[key]);
+  }
+  return undefined;
 }
 
 export function isPostmanFolder(item: PostmanItem): item is PostmanFolder {

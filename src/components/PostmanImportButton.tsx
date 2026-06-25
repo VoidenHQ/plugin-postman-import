@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { importPostmanCollection } from "../utils/converter";
 import { isPostmanEnvironmentExport } from "../utils/types";
-import { X, XCircle } from "lucide-react";
+import { Check, X, XCircle } from "lucide-react";
+
+const COMPLETED_DISPLAY_MS = 2000;
 
 /**
  * Best-effort detection of whether content is a Postman environment/globals
@@ -50,6 +52,14 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
   const [successMessage, setSuccessMessage] = useState<string | null>(cached?.successMessage ?? null);
   const [isEnvironment, setIsEnvironment] = useState(() => looksLikeEnvironmentExport(tab.content));
   const cancelSignalRef = useRef<{ cancelled: boolean } | null>(null);
+  const completedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending "Completed" auto-reset timer on unmount
+  useEffect(() => {
+    return () => {
+      if (completedTimerRef.current) clearTimeout(completedTimerRef.current);
+    };
+  }, []);
 
   // Keep cache in sync with state
   useEffect(() => {
@@ -96,6 +106,10 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
   };
 
   const handleImport = async () => {
+    if (completedTimerRef.current) {
+      clearTimeout(completedTimerRef.current);
+      completedTimerRef.current = null;
+    }
     try {
       setError(null);
       setIsErrorVisible(false);
@@ -146,7 +160,9 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
       const isEnvImport = isPostmanEnvironmentExport(parsed);
       setIsEnvironment(isEnvImport);
 
+      let finalTotal = 0;
       const result = await importPostmanCollection(content, activeProject, (current, total) => {
+        finalTotal = total;
         setProgress({ current, total });
       }, (itemName, error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -156,16 +172,22 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
       // If cancelled mid-way, don't show success state
       if (signal.cancelled) return;
 
-      // Success - for environment imports, surface the variable-count message;
-      // collection imports keep showing the "Generated N files" progress label.
-      if (isEnvImport) {
-        setSuccessMessage(result?.message ?? "Environment imported");
-      } else {
-        setProgress({ current: 0, total: 0 });
-      }
+      // Success — show a brief "Completed" state (no lingering colored button),
+      // fire a toast with the details, then auto-reset after a couple seconds.
+      const completedMessage = isEnvImport
+        ? (result?.message ?? "Environment imported")
+        : `Imported ${finalTotal} request${finalTotal === 1 ? "" : "s"}`;
+
+      showToast?.(completedMessage, 'success');
+      setSuccessMessage(completedMessage);
+      setProgress({ current: 0, total: 0 });
       setIsImporting(false);
-      importStateCache.delete(tab.tabId);
-      cancelSignals.delete(tab.tabId);
+
+      completedTimerRef.current = setTimeout(() => {
+        setSuccessMessage(null);
+        importStateCache.delete(tab.tabId);
+        cancelSignals.delete(tab.tabId);
+      }, COMPLETED_DISPLAY_MS);
 
     } catch (error) {
       console.error("Failed to import Postman collection:", error);
@@ -188,38 +210,28 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
   };
 
   const getButtonText = () => {
+    if (successMessage) return successMessage;
+
     if (isEnvironment) {
-      if (isImporting) return "Importing variables...";
-      if (successMessage) return successMessage;
-      return "Import Environment Variables";
+      return isImporting ? "Importing variables..." : "Import Environment Variables";
     }
 
     if (isImporting && progress.current > 0 && progress.current < progress.total) {
       return `Generating files... ${progress.current}/${progress.total}`;
     }
 
-    if (progress.current === progress.total && progress.total > 0) {
-      return `Generated ${progress.total} files`;
-    }
-
     return "Generate Voiden files";
   };
 
   const getButtonClass = () => {
-    const baseClass = "px-2 py-0.5 rounded-sm text-sm transition-all duration-200";
+    const baseClass = "px-2 py-0.5 rounded-sm text-sm transition-all duration-200 inline-flex items-center gap-1";
 
-    if (isEnvironment) {
-      if (isImporting) return `${baseClass} bg-yellow-500 hover:bg-yellow-600 text-black cursor-wait`;
-      if (successMessage) return `${baseClass} bg-green-500 hover:bg-green-600 text-white`;
-      return `${baseClass} bg-panel hover:bg-active text-foreground`;
+    if (successMessage) {
+      return `${baseClass} bg-panel text-foreground`;
     }
 
-    if (isImporting && progress.current > 0 && progress.current < progress.total) {
+    if (isImporting && (isEnvironment || (progress.current > 0 && progress.current < progress.total))) {
       return `${baseClass} bg-yellow-500 hover:bg-yellow-600 text-black cursor-wait`;
-    }
-
-    if (progress.current === progress.total && progress.total > 0) {
-      return `${baseClass} bg-green-500 hover:bg-green-600 text-white`;
     }
 
     return `${baseClass} bg-panel hover:bg-active text-foreground`;
@@ -237,6 +249,7 @@ export const PostmanImportButton = ({ tab, showToast }: PostmanImportButtonProps
             disabled={isInProgress}
             title={isInProgress ? "Import in progress..." : isEnvironment ? "Import Postman environment variables" : "Import Postman collection"}
           >
+            {successMessage && <Check size={14} />}
             {getButtonText()}
           </button>
 

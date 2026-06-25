@@ -2,7 +2,7 @@
   "id": "postman-import",
   "name": "Postman Collection Importer",
   "description": "Seamlessly migrate from Postman by importing v2.1 collections and automatically converting them to native Voiden request files with full support for nested folders, environment variables, headers, auth, and all request body types",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "voidenVersion": ">=2.0.0",
   "author": "Voiden Team",
   "priority": 50,
@@ -33,6 +33,21 @@
           "extension": "voiden-rest-api",
           "reason": "Uses voiden-rest-api helpers to generate compatible REST API blocks",
           "required": true
+        },
+        {
+          "extension": "voiden-advanced-auth",
+          "reason": "Renders the auth block generated for OAuth2/OAuth1/digest/NTLM/AWS/Hawk auth types",
+          "required": false
+        },
+        {
+          "extension": "voiden-scripting",
+          "reason": "Renders the pre_script/post_script blocks generated from Postman's pre-request and test scripts",
+          "required": false
+        },
+        {
+          "extension": "voiden-graphql",
+          "reason": "Renders the gqlquery/gqlvariables blocks generated from Postman's GraphQL request bodies",
+          "required": false
         }
       ],
       "description": "Depends on voiden-rest-api extension for REST block generation"
@@ -52,8 +67,13 @@
     "Import request headers and convert to headers-table blocks",
     "Import query parameters and convert to query-table blocks",
     "Import JSON request bodies and convert to json_body blocks",
-    "Import form-data bodies and convert to multipart-table blocks",
+    "Import form-data bodies and convert to multipart-table blocks, with file fields resolved as fileLink attachments when the file still exists at its original path",
     "Import URL-encoded bodies",
+    "Convert colon-style path params (:id) to brace-style placeholders ({id}) and import them as path-table blocks",
+    "Import Postman environment and globals exports as project environment variables",
+    "Convert auth (basic/bearer/apikey/oauth2/oauth1/digest/ntlm/awsv4/hawk) into a native auth block",
+    "Import pre-request/test scripts as commented-out pre_script/post_script blocks for manual review",
+    "Convert GraphQL request bodies into gqlquery/gqlvariables blocks",
     "Sanitize file and folder names for filesystem compatibility",
     "Progress tracking during import",
     "Batch file creation with throttling to prevent system overload",
