@@ -274,15 +274,47 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
     // Build voiden blocks using the exposed helpers
     const blocks: any[] = [];
 
-    // 1. Request block (method + url)
-    const requestBlock = {
-      type: 'request',
-      content: [
-        helpers.createMethodNode(data.request.method),
-        helpers.createUrlNode(convertColonPathParams(normalizePostmanUrl(data.request.url)))
-      ]
-    };
-    blocks.push(requestBlock);
+    // 1. Request-defining block.
+    // A GraphQL request becomes a native gqlquery block with the endpoint folded in (gqlurl),
+    // instead of a plain POST request block plus a detached query block (#490).
+    const endpointUrl = convertColonPathParams(normalizePostmanUrl(data.request.url));
+    const graphqlBody = data.request.body?.mode === "graphql" ? data.request.body?.graphql : undefined;
+
+    if (graphqlBody?.query) {
+      blocks.push({
+        type: "gqlquery",
+        attrs: { importedFrom: "postman" },
+        content: [
+          {
+            type: "gqlurl",
+            content: endpointUrl ? [{ type: "text", text: endpointUrl }] : [],
+          },
+          {
+            type: "gqlbody",
+            attrs: {
+              body: graphqlBody.query,
+              operationType: detectGraphqlOperationType(graphqlBody.query),
+              schemaFileName: null,
+              schemaFilePath: null,
+              schemaUrl: null,
+              importedFrom: "postman",
+            },
+          },
+        ],
+      });
+
+      if (graphqlBody.variables) {
+        blocks.push({ type: "gqlvariables", attrs: { body: graphqlBody.variables } });
+      }
+    } else {
+      blocks.push({
+        type: 'request',
+        content: [
+          helpers.createMethodNode(data.request.method),
+          helpers.createUrlNode(endpointUrl)
+        ]
+      });
+    }
 
     // 2. Auth — dedicated auth block (covers basic/bearer/apikey/oauth2/oauth1/digest/ntlm/awsv4/hawk)
     const authBlock = buildAuthBlock(data.request.auth);
@@ -375,20 +407,7 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
         }
       }
 
-      // 4d. GraphQL body
-      else if (body.mode === "graphql" && body.graphql?.query) {
-        blocks.push({
-          type: "gqlquery",
-          attrs: {
-            body: body.graphql.query,
-            operationType: detectGraphqlOperationType(body.graphql.query),
-            schemaUrl: null,
-          },
-        });
-        if (body.graphql.variables) {
-          blocks.push({ type: "gqlvariables", attrs: { body: body.graphql.variables } });
-        }
-      }
+      // 4d. GraphQL is emitted as a gqlquery block (with endpoint + variables) in step 1.
     }
 
     // 5. Post-response (test) scripts — imported commented-out (see buildScriptBlock)
