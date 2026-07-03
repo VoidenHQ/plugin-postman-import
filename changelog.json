@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.0.5",
+    "date": "03/07/2026",
+    "title": "GraphQL Import Fix & Performance",
+    "changes": {
+      "Fixed": [
+        "GraphQL requests now import with the correct gqlquery container format (gqlurl + gqlbody children) required by the voiden-graphql plugin — previously generated a flat format that caused a blank query block",
+        "CRLF line endings in imported GraphQL query bodies are now normalized to LF, preventing garbled single-line output in the editor",
+        "GraphQL requests no longer also generate a redundant request block — the URL is placed inside the gqlurl child node instead"
+      ],
+      "Improved": [
+        "Environment/globals export detection now uses a fast string probe instead of JSON.parse, eliminating unnecessary parsing of large collection files on every render"
+      ]
+    }
+  },
+  {
     "version": "v1.0.4",
     "date": "24/06/2026",
     "title": "Auth, Scripts, File Uploads & GraphQL",
