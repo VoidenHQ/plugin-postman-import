@@ -274,15 +274,21 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
     // Build voiden blocks using the exposed helpers
     const blocks: any[] = [];
 
-    // 1. Request block (method + url)
-    const requestBlock = {
-      type: 'request',
-      content: [
-        helpers.createMethodNode(data.request.method),
-        helpers.createUrlNode(convertColonPathParams(normalizePostmanUrl(data.request.url)))
-      ]
-    };
-    blocks.push(requestBlock);
+    const url = convertColonPathParams(normalizePostmanUrl(data.request.url));
+    // GraphQL requests use a gqlquery container — the URL lives inside gqlurl,
+    // not in a request block.
+    const isGraphQL = data.request.body?.mode === "graphql" && !!data.request.body?.graphql?.query;
+
+    // 1. Request block (method + url) — skipped for GraphQL
+    if (!isGraphQL) {
+      blocks.push({
+        type: 'request',
+        content: [
+          helpers.createMethodNode(data.request.method),
+          helpers.createUrlNode(url)
+        ]
+      });
+    }
 
     // 2. Auth — dedicated auth block (covers basic/bearer/apikey/oauth2/oauth1/digest/ntlm/awsv4/hawk)
     const authBlock = buildAuthBlock(data.request.auth);
@@ -375,18 +381,40 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
         }
       }
 
-      // 4d. GraphQL body
-      else if (body.mode === "graphql" && body.graphql?.query) {
+      // 4d. GraphQL body — container format: gqlquery > [gqlurl, gqlbody]
+      // The URL is carried in the gqlurl child (not in a request block).
+      // Normalize CRLF to LF so the YAML serializer doesn't produce escaped
+      // single-line strings for multi-line queries.
+      else if (isGraphQL) {
+        const query = (body.graphql!.query as string).replace(/\r\n/g, "\n");
         blocks.push({
           type: "gqlquery",
-          attrs: {
-            body: body.graphql.query,
-            operationType: detectGraphqlOperationType(body.graphql.query),
-            schemaUrl: null,
-          },
+          attrs: { uid: crypto.randomUUID() },
+          content: [
+            {
+              type: "gqlurl",
+              attrs: { uid: crypto.randomUUID() },
+              content: [{ type: "text", text: url }],
+            },
+            {
+              type: "gqlbody",
+              attrs: {
+                uid: crypto.randomUUID(),
+                body: query,
+                operationType: detectGraphqlOperationType(query),
+                schemaUrl: null,
+                schemaFileName: null,
+                schemaFilePath: null,
+              },
+            },
+          ],
         });
-        if (body.graphql.variables) {
-          blocks.push({ type: "gqlvariables", attrs: { body: body.graphql.variables } });
+        if (body.graphql!.variables) {
+          const vars = (body.graphql!.variables as string).replace(/\r\n/g, "\n");
+          blocks.push({
+            type: "gqlvariables",
+            attrs: { uid: crypto.randomUUID(), body: vars },
+          });
         }
       }
     }

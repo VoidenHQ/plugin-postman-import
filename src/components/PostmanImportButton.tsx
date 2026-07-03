@@ -1,23 +1,26 @@
 import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { importPostmanCollection } from "../utils/converter";
-import { isPostmanEnvironmentExport } from "../utils/types";
 import { Check, X, XCircle } from "lucide-react";
 
 const COMPLETED_DISPLAY_MS = 2000;
 
 /**
  * Best-effort detection of whether content is a Postman environment/globals
- * export, used purely to pick the right button copy. Returns false on
- * anything that doesn't parse (e.g. content not loaded yet for large files).
+ * export, used purely to pick the right button copy.
+ *
+ * Avoids JSON.parse on potentially large (900 KB+) files — the distinguishing
+ * field "_postman_variable_scope" always appears near the top of an env export
+ * and never in a collection, so a cheap string probe is sufficient.
  */
 function looksLikeEnvironmentExport(content: string): boolean {
   if (!content) return false;
-  try {
-    return isPostmanEnvironmentExport(JSON.parse(content));
-  } catch {
-    return false;
-  }
+  const marker = '"_postman_variable_scope"';
+  const idx = content.indexOf(marker);
+  if (idx === -1 || idx > 2000) return false;
+  const after = content.slice(idx + marker.length).trimStart();
+  return after.startsWith(':"environment"') || after.startsWith(': "environment"') ||
+         after.startsWith(':"globals"') || after.startsWith(': "globals"');
 }
 
 interface PostmanImportButtonProps {
