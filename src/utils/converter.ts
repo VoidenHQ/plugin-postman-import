@@ -7,7 +7,7 @@ import type {
   PostmanRequestBody,
   PostmanItem,
 } from "./types";
-import { isPostmanFolder, isPostmanEnvironmentExport, normalizePostmanUrl, convertColonPathParams, extractPostmanPathParams, getAuthParam } from "./types";
+import { isPostmanFolder, isPostmanEnvironmentExport, normalizePostmanUrl, convertColonPathParams, extractPostmanPathParams, getAuthParam, extractDescriptionText } from "./types";
 import { getVoidenApiHelpers } from "./useVoidenApiHelpers";
 
 
@@ -442,9 +442,13 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
  */
 export const createSingleFile = async (request: PostmanRequest, currentPath: string, fileName: string) => {
   let content = await convertPostmanRequestToVoidenSchema(request);
-  // Adds the request level description at end of void blocks
-  if (request.request.description) {
-    content += request.request.description;
+  // Insert the request-level description as markdown documentation right
+  // after the title heading, before the void blocks — appending it at the
+  // end of the file left it detached from (and sometimes glued onto) the
+  // last block's closing fence.
+  const description = extractDescriptionText(request.request.description);
+  if (description) {
+    content = content.replace(/(# .+\n\n)/, (heading) => `${heading}${description}\n\n`);
   }
   // Use createVoid to handle deduplication (adds " 1", " 2", etc. if file exists)
   const result = await (window as any).electron?.files?.createVoid(currentPath, fileName);

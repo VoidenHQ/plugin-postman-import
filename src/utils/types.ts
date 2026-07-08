@@ -45,7 +45,17 @@ export interface PostmanRequestDetail {
   body?: PostmanRequestBody;
   url: PostmanUrl | string; // Support both v2.0.0 (string) and v2.1.0 (object)
   auth?: PostmanAuth;
-  description?:string
+  description?: string | { content: string; type?: string }; // Postman allows either shape
+}
+
+/**
+ * Postman's `description` field can be a plain string or a
+ * `{ content, type }` object — normalize to plain text either way.
+ */
+export function extractDescriptionText(description: string | { content: string; type?: string } | undefined): string {
+  if (!description) return '';
+  if (typeof description === 'string') return description;
+  return description.content ?? '';
 }
 
 export interface PostmanHeader {
@@ -183,11 +193,23 @@ export function normalizePostmanUrl(url: PostmanUrl | string): string {
 }
 
 /**
+ * Splits a URL into its authority (scheme://host:port) and the remainder
+ * (path/query/hash), so path-param scanning never touches a literal port
+ * number like the "3000" in "http://localhost:3000/api/:id".
+ */
+function splitUrlAuthority(url: string): { authority: string; rest: string } {
+  const match = url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/?#]*/);
+  if (!match) return { authority: '', rest: url };
+  return { authority: match[0], rest: url.slice(match[0].length) };
+}
+
+/**
  * Convert Postman's colon-style path segments (:id) to Voiden's brace-style
  * placeholders ({id}), e.g. "{{base_url}}/:id/:bye" -> "{{base_url}}/{id}/{bye}"
  */
 export function convertColonPathParams(url: string): string {
-  return url.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
+  const { authority, rest } = splitUrlAuthority(url);
+  return authority + rest.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
 }
 
 /**
@@ -203,6 +225,8 @@ export function extractPostmanPathParams(url: PostmanUrl | string): Array<[strin
   }
 
   const raw = typeof url === 'string' ? url : url.raw;
-  const matches = raw ? raw.match(/:([a-zA-Z0-9_]+)/g) : null;
+  if (!raw) return [];
+  const { rest } = splitUrlAuthority(raw);
+  const matches = rest.match(/:([a-zA-Z0-9_]+)/g);
   return matches ? matches.map((m) => [m.slice(1), ''] as [string, string]) : [];
 }
