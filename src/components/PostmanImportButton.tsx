@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { importPostmanCollection } from "../utils/converter";
+import { isPostmanEnvironmentExport } from "../utils/types";
 import { Check, X, XCircle } from "lucide-react";
 
 const COMPLETED_DISPLAY_MS = 2000;
