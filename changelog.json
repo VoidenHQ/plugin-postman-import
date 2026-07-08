@@ -2,10 +2,15 @@
   {
     "version": "v1.0.6",
     "date": "08/07/2026",
-    "title": "Environment Import Crash Fix",
+    "title": "Import Crash, Path Params & Description Fixes",
     "changes": {
       "Fixed": [
-        "Importing any Postman collection or environment export no longer throws \"isPostmanEnvironmentExport is not defined\" — the button component was calling the check without importing it"
+        "Importing any Postman collection or environment export no longer throws \"isPostmanEnvironmentExport is not defined\" — the button component was calling the check without importing it",
+        "Path-param extraction no longer mistakes a literal URL port for a path parameter — \"http://localhost:3000/api/:id\" previously mangled the URL to \"http://localhost{3000}/api/{id}\" instead of just \"{id}\"",
+        "Request-level descriptions are now inserted as markdown documentation right after the title heading, instead of being concatenated onto the very end of the file with no separation (and sometimes glued onto the last block's closing fence)",
+        "Request-level and collection-level descriptions now correctly handle Postman's \"{ content, type }\" description object shape, not just plain strings",
+        "The collection-level root documentation file (from the collection's own description) is now written as a well-formed .void file with proper frontmatter and a title heading, instead of raw text with no frontmatter that the editor didn't recognize as a valid document",
+        "Large request bodies (multi-hundred KB to MB, common for base64-encoded file payloads) no longer risk freezing the app during import — writes now go through the same 512KB chunked-write path the rest of the app already uses for large saves"
       ]
     }
   },
