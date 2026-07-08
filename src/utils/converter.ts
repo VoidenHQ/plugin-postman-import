@@ -436,6 +436,25 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
   }
 };
 
+// Matches the app's own save path (apps/ui useFileSystem.ts writeFileChunked) —
+// writing a large file in one IPC call can freeze the Electron main process,
+// so anything over this size is streamed in chunks instead.
+const WRITE_CHUNK_SIZE = 512 * 1024;
+
+async function writeFileChunked(filePath: string, content: string): Promise<void> {
+  const files = (window as any).electron?.files;
+  if (content.length <= WRITE_CHUNK_SIZE) {
+    await files?.write(filePath, content);
+    return;
+  }
+  for (let i = 0; i < content.length; i += WRITE_CHUNK_SIZE) {
+    const chunk = content.slice(i, i + WRITE_CHUNK_SIZE);
+    const isFirst = i === 0;
+    const isLast = i + WRITE_CHUNK_SIZE >= content.length;
+    await files?.appendChunk(filePath, chunk, isFirst, isLast);
+  }
+}
+
 /**
  * Create a single .void file from a Postman request
  * Uses createVoid API to handle duplicate file names properly
@@ -454,8 +473,8 @@ export const createSingleFile = async (request: PostmanRequest, currentPath: str
   const result = await (window as any).electron?.files?.createVoid(currentPath, fileName);
 
   if (result?.path) {
-    // Write content to the created file
-    await (window as any).electron?.files?.write(result.path, content);
+    // Write content to the created file, chunked if it's large
+    await writeFileChunked(result.path, content);
   }
 };
 
@@ -585,11 +604,12 @@ export const importPostmanCollection = async (
     const rootFolderName = sanitizeName(json.info.name);
     const actualRootFolderName = await (window as any).electron?.files?.createDirectory(activeProject, rootFolderName);
     // Create root void file for collection documentation
-    if (json.info.description) {
+    const collectionDescription = extractDescriptionText(json.info.description);
+    if (collectionDescription) {
       const result = await (window as any).electron?.files?.createVoid(`${activeProject}/${actualRootFolderName}`, rootFolderName);
       if (result?.path) {
-        // Write content to the created file
-        await (window as any).electron?.files?.write(result.path, json.info.description);
+        // Write content to the created file, chunked if it's large
+        await writeFileChunked(result.path, collectionDescription);
       }
     }
     if (json && json.variable && json.variable.length > 0) {

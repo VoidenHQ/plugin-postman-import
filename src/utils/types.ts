@@ -12,7 +12,7 @@ export interface PostmanInfo {
   _postman_id: string;
   name: string;
   schema: string;
-  description?: string;
+  description?: string | { content: string; type?: string };
 }
 
 export type PostmanItem = PostmanFolder | PostmanRequest;
