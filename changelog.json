@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.0.6",
+    "date": "08/07/2026",
+    "title": "Environment Import Crash Fix",
+    "changes": {
+      "Fixed": [
+        "Importing any Postman collection or environment export no longer throws \"isPostmanEnvironmentExport is not defined\" — the button component was calling the check without importing it"
+      ]
+    }
+  },
+  {
     "version": "v1.0.5",
     "date": "03/07/2026",
     "title": "GraphQL Import Fix & Performance",
