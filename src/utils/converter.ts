@@ -608,8 +608,14 @@ export const importPostmanCollection = async (
     if (collectionDescription) {
       const result = await (window as any).electron?.files?.createVoid(`${activeProject}/${actualRootFolderName}`, rootFolderName);
       if (result?.path) {
-        // Write content to the created file, chunked if it's large
-        await writeFileChunked(result.path, collectionDescription);
+        // createVoid creates an empty file — wrap the description in the same
+        // frontmatter + title shape every other generated .void file gets,
+        // rather than writing raw text with no frontmatter (which the editor
+        // doesn't recognize as a well-formed .void document).
+        const helpers = getVoidenApiHelpers();
+        let content = helpers.convertBlocksToVoidFile(rootFolderName, []);
+        content = content.replace(/(# .+\n\n)/, (heading) => `${heading}${collectionDescription}\n\n`);
+        await writeFileChunked(result.path, content);
       }
     }
     if (json && json.variable && json.variable.length > 0) {
