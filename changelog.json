@@ -4,6 +4,9 @@
     "date": "08/07/2026",
     "title": "Import Crash, Path Params & Description Fixes",
     "changes": {
+      "Improved": [
+        "Postman-file detection now only scans the first 64KB of a .json tab's content instead of the entire buffer, so the check for the \"Import as Postman\" action stays fast regardless of file size instead of rescanning a multi-hundred-KB collection on every render"
+      ],
       "Fixed": [
         "Importing any Postman collection or environment export no longer throws \"isPostmanEnvironmentExport is not defined\" — the button component was calling the check without importing it",
         "Path-param extraction no longer mistakes a literal URL port for a path parameter — \"http://localhost:3000/api/:id\" previously mangled the URL to \"http://localhost{3000}/api/{id}\" instead of just \"{id}\"",

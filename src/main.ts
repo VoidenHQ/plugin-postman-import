@@ -35,8 +35,13 @@ const postmanImportPlugin = (context: PluginContext) => {
             showToast,
           }),
         predicate: (tab) => {
-          // Only show for .json files
-          return tab.title?.endsWith('.json') && tab.content?.indexOf('postman') > -1;
+          // Only show for .json files. Postman's format markers ("schema":
+          // "https://schema.getpostman.com/...") always sit in the top-level
+          // "info" block, so sniffing a bounded prefix is enough — this keeps
+          // the cost independent of file size instead of rescanning the full
+          // (potentially multi-hundred-KB) buffer on every render.
+          if (!tab.title?.endsWith('.json')) return false;
+          return (tab.content ?? '').slice(0, 65536).indexOf('postman') > -1;
         },
       });
 
