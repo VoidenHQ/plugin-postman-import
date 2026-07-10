@@ -63,6 +63,7 @@ export interface PostmanHeader {
   value: string;
   type: string;
   disabled?: boolean;
+  description?: string | { content: string; type?: string };
 }
 
 export interface PostmanRequestBody {
@@ -105,12 +106,14 @@ export interface PostmanQueryParameter {
   key: string;
   value: string;
   disabled?: boolean;
+  description?: string | { content: string; type?: string };
 }
 
 export interface PostmanPathVariable {
   key: string;
   value: string;
   disabled?: boolean;
+  description?: string | { content: string; type?: string };
 }
 
 /**
@@ -216,17 +219,21 @@ export function convertColonPathParams(url: string): string {
  * Extract path parameters from a Postman URL.
  * Prefers the explicit `variable` array (Postman v2.1 path variables);
  * falls back to inferring `:name` segments from the raw URL when absent.
+ *
+ * Always returns 3-element tuples (key, value, description) — description
+ * is an empty string when Postman didn't provide one, e.g. for segments
+ * inferred from `:name` in the raw URL.
  */
-export function extractPostmanPathParams(url: PostmanUrl | string): Array<[string, string]> {
+export function extractPostmanPathParams(url: PostmanUrl | string): Array<[string, string, string]> {
   if (typeof url === 'object' && url.variable && url.variable.length > 0) {
     return url.variable
       .filter((v) => !v.disabled)
-      .map((v) => [v.key, v.value ?? ''] as [string, string]);
+      .map((v) => [v.key, v.value ?? '', extractDescriptionText(v.description)] as [string, string, string]);
   }
 
   const raw = typeof url === 'string' ? url : url.raw;
   if (!raw) return [];
   const { rest } = splitUrlAuthority(raw);
   const matches = rest.match(/:([a-zA-Z0-9_]+)/g);
-  return matches ? matches.map((m) => [m.slice(1), ''] as [string, string]) : [];
+  return matches ? matches.map((m) => [m.slice(1), '', ''] as [string, string, string]) : [];
 }

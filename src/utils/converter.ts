@@ -12,6 +12,21 @@ import { getVoidenApiHelpers } from "./useVoidenApiHelpers";
 
 
 /**
+ * Voiden's headers/query/path tables only show a Description column once at
+ * least one row actually has one (see Table.tsx's `showAddDescription` — the
+ * column count of the first row decides whether the column renders). Drop
+ * the 3rd element back down to a plain 2-tuple when nothing has a
+ * description, so imports without them keep the existing 2-column table
+ * (with its "+ Description" affordance) instead of always showing an empty
+ * Description column.
+ */
+function withOptionalDescriptions(
+  rows: [string, string, string][]
+): [string, string][] | [string, string, string][] {
+  return rows.some((row) => row[2]) ? rows : rows.map(([key, value]) => [key, value] as [string, string]);
+}
+
+/**
  * Sanitize folder/file names to be filesystem-safe
  */
 export function sanitizeName(name: string): string {
@@ -309,7 +324,9 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
 
     if (activeHeaders.length > 0) {
       const headersBlock = helpers.createHeadersTableNode(
-        activeHeaders.map(h => [h.key, h.value] as [string, string])
+        withOptionalDescriptions(
+          activeHeaders.map(h => [h.key, h.value, extractDescriptionText(h.description)] as [string, string, string])
+        )
       );
       blocks.push(headersBlock);
     }
@@ -317,7 +334,7 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
     // 3b. Path parameters — from Postman's url.variable, or inferred from :name segments
     const pathParams = extractPostmanPathParams(data.request.url);
     if (pathParams.length > 0) {
-      blocks.push(helpers.createPathParamsTableNode(pathParams));
+      blocks.push(helpers.createPathParamsTableNode(withOptionalDescriptions(pathParams)));
     }
 
     // 3c. Query parameters (v2.1.0 format)
@@ -326,7 +343,9 @@ export const convertPostmanRequestToVoidenSchema = async (data: PostmanRequest):
       const activeQueries = data.request.url.query.filter(q => !q.disabled);
       if (activeQueries.length > 0) {
         const queryBlock = helpers.createQueryTableNode(
-          activeQueries.map(q => [q.key, q.value] as [string, string])
+          withOptionalDescriptions(
+            activeQueries.map(q => [q.key, q.value, extractDescriptionText(q.description)] as [string, string, string])
+          )
         );
         blocks.push(queryBlock);
       }
