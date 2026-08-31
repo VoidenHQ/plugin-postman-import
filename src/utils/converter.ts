@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { isPostmanFolder, isPostmanEnvironmentExport, normalizePostmanUrl, convertColonPathParams, extractPostmanPathParams, getAuthParam, extractDescriptionText } from "./types";
 import { getVoidenApiHelpers } from "./useVoidenApiHelpers";
+import { translatePostmanScript } from "./scriptTranslator";
 
 
 /**
@@ -229,15 +230,28 @@ function detectGraphqlOperationType(query: string): "query" | "mutation" | "subs
 }
 
 /**
- * Convert a Postman pre-request/test script into a non-executing Voiden
- * pre_script/post_script block. Postman scripts use the pm.* API while
- * Voiden scripts use a different voiden.* / vd.* API, so a literal translation
- * isn't safe to automate — the script is commented out so it's preserved
- * for manual review instead of erroring or silently disappearing.
+ * Convert a Postman pre-request/test script into a Voiden pre_script/
+ * post_script block. Tries translatePostmanScript() first — if every line
+ * resolves to a recognized safe pattern (variable get/set, response/request
+ * field access, and simple `expect(...).to.<matcher>(...)` assertions), the
+ * script ships live, translated into voiden.* calls. Otherwise (anything
+ * unrecognized — control flow, pm.sendRequest, an unsupported chai matcher,
+ * ...) it falls back to the original behavior: commented out in full, for
+ * manual review, since a partial/guessed translation is worse than none.
  */
 function buildScriptBlock(type: "pre_script" | "post_script", exec: string[] | string | undefined): any | null {
   const lines = Array.isArray(exec) ? exec : typeof exec === "string" ? exec.split(/\r?\n/) : [];
   if (!lines.some((line) => line.trim() !== "")) return null;
+
+  const raw = lines.join("\n");
+  const { body: translated, safe } = translatePostmanScript(raw);
+
+  if (safe) {
+    return {
+      type,
+      attrs: { language: "javascript", body: translated },
+    };
+  }
 
   const header = [
     "// Imported from a Postman pm.* script.",
