@@ -189,7 +189,15 @@ export function translatePostmanScript(rawScript: string): { body: string; safe:
 
     // Anything with no remaining foreign token (pm.*, still-open test(/expect() calls)
     // is already fully substituted plain JS / voiden.* — safe to keep as-is.
-    if (!/\bpm\.\w|\bpm\.test\(|\bpm\.expect\(/.test(trimmed)) { out.push(line); continue; }
+    // require(...)/import — Postman's sandbox bundles npm packages (moment,
+    // lodash, etc. via require()); Voiden's scripting sandbox has no such
+    // mechanism (confirmed against voiden-scripting's own API reference —
+    // no require/import/module-loading facility exists there), so a script
+    // that "translates" cleanly but still calls require(...) would ship
+    // live and throw at runtime. Treat it exactly like an unrecognized
+    // foreign call — real Postman scripts using this pattern exist (e.g.
+    // `require('moment')` for date formatting), so this isn't theoretical.
+    if (!/\bpm\.\w|\bpm\.test\(|\bpm\.expect\(|\brequire\(|\bimport\s/.test(trimmed)) { out.push(line); continue; }
 
     // Unrecognized construct — bail out for the whole script.
     return { body: rawScript, safe: false };
