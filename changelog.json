@@ -1,5 +1,21 @@
 [
   {
+    "version": "v1.2.0",
+    "date": "02/09/2026",
+    "title": "Script Translation & Detection Fix",
+    "changes": {
+      "Added": [
+        "src/skill.md — teaches an agent how to generate .void files directly from a raw Postman collection, including consolidating a folder's CRUD-shaped sibling requests into one multi-section file instead of one file per request",
+        "Script translation now covers the full Chai matcher set real Postman test scripts use: .to.match(regex) (literal, flag-less patterns), .to.have.property()/.to.not.have.property(), .to.be.within(min,max), .to.be.closeTo(x,delta), .to.be.null/.undefined, .to.exist/.to.not.exist, .to.be.a(typeName) (typeof-safe types only), .to.have.lengthOf(n), .to.be.oneOf([...]), and the pm.response.to.be.json/pm.response.to.have.status(n) shorthands",
+        "A named pm.test(\"...\", fn) wrapper's description is now threaded through as voiden.assert's message argument instead of being discarded",
+        "require()/import calls inside a script are treated as safe rather than forcing the whole script to fall back to commented-out — Voiden's JavaScript scripting engine runs each script in a real Node.js subprocess rooted at the project directory, so require() resolves exactly as it would in Postman itself"
+      ],
+      "Fixed": [
+        "The \"Generate Voiden files\" button's file-detection check only looked for the bare substring \"postman\" anywhere in the file — a false positive on any non-Postman collection that simply mentions postman-echo.com (a common public test API used across Insomnia/Bruno collections too) or otherwise contains the word. Now requires the actual collection marker (schema.getpostman.com) or environment marker (_postman_variable_scope)"
+      ]
+    }
+  },
+  {
     "version": "v1.0.6",
     "date": "08/07/2026",
     "title": "Import Crash, Path Params & Description Fixes",

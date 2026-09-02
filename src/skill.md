@@ -31,13 +31,13 @@ attrs:
 type: request
 attrs:
   uid: "a1b2c3d4-e5f6-4789-ab01-cd23ef456789"
-  content:
-    - type: method
-      attrs: { uid: "...", method: POST, visible: true }
-      content: POST
-    - type: url
-      attrs: { uid: "..." }
-      content: "{{BASE_URL}}/users"
+content:
+  - type: method
+    attrs: { uid: "...", method: POST, visible: true }
+    content: POST
+  - type: url
+    attrs: { uid: "..." }
+    content: "{{BASE_URL}}/users"
 ---
 ```
 
@@ -74,20 +74,7 @@ attrs:
 ---
 ```
 
-```void
----
-type: request
-attrs:
-  uid: "..."
-  content:
-    - type: method
-      attrs: { uid: "...", method: GET, visible: true }
-      content: GET
-    - type: url
-      attrs: { uid: "..." }
-      content: "{{BASE_URL}}/users/{{process.user_id}}"
----
-```
+Add this section's `request` block the same shape as `Create User`'s above (method `GET`, url `{{BASE_URL}}/users/{{process.user_id}}`) — the exact `request`/`method`/`url` structure isn't repeated a second time here on purpose: it's a core block owned by the base skill, not something this plugin skill redefines, so there's exactly one place that shape can drift out of sync instead of two.
 ```
 
 Keep going with the same pattern for `Update User` (PUT/PATCH) and `Delete User` (DELETE) sections. Section `label`s name the operation — don't add a redundant `## Create User` heading (see "Placement" below).
@@ -114,9 +101,59 @@ Each `item.request` (Postman v2.1) maps onto one section's blocks:
 
 ### Translating `pm.*` scripts into live `voiden.*` code
 
-Postman scripts use the `pm.*` sandbox API; Voiden scripts use `voiden.*`/`vd.*` (see `voiden-scripting`'s skill for the full reference) — the two aren't source-compatible, so a blanket "just copy the script" isn't safe. But a real, useful subset of `pm.*` calls maps directly onto `voiden.*`, and translating those live (instead of leaving every script commented for manual review) is worth doing — **as long as it's all-or-nothing per script**: translate the whole thing only if *every* line resolves to a recognized pattern below; if even one line doesn't, leave the *entire* script commented exactly as before. Never emit a half-translated, half-commented script — that's harder to review than a fully-commented one.
+Postman scripts use the `pm.*` sandbox API; Voiden scripts use the `voiden.*`/`vd.*` object — the two aren't source-compatible, so a blanket "just copy the script" isn't safe. But a real, useful subset of `pm.*` calls maps directly onto `voiden.*`, and translating those live (instead of leaving every script commented for manual review) is worth doing — **as long as it's all-or-nothing per script**: translate the whole thing only if *every* line resolves to a recognized pattern below; if even one line doesn't, leave the *entire* script commented exactly as before. Never emit a half-translated, half-commented script — that's harder to review than a fully-commented one. Every generated `pre_script`/`post_script` block from this importer uses `attrs.language: javascript` — Postman scripts are always JS, so there's no Python/Shell target to consider here.
 
-**Safe to translate:**
+#### The full `voiden.*` surface a translated script can use
+
+This is the complete API — not a subset — so you have full context for what a translated line is allowed to become, and what's available if you're hand-writing additional assertions beyond what the original `pm.*` script had. Read `voiden-scripting`'s own skill for Python/Shell equivalents; only the JavaScript form is relevant here.
+
+| Object | Member | Read/Write | Description |
+|---|---|---|---|
+| `voiden.request` | `.url` | rw | Request URL (pre_script only) |
+| | `.method` | rw | HTTP method |
+| | `.headers` | rw | Assign `{key,value}`, an array of them, or a `{Name:val}` map to **replace all** |
+| | `.headers.push({key,value,enabled?})` | append | Add one header without replacing existing ones |
+| | `.body` | rw | Request body — must be a string |
+| | `.queryParams` | rw | Assign to **replace all**; `{key,value,enabled?}[]` |
+| | `.queryParams.push({key,value,enabled?})` | append | Add one query param |
+| | `.pathParams` | rw | Assign to **replace all**; `{key,value,enabled?}[]` |
+| | `.pathParams.push({key,value,enabled?})` | append | Add one path param |
+| `voiden.response` | `.status` | rw (post_script) | HTTP status code, number |
+| | `.statusText` | rw (post_script) | HTTP status text string |
+| | `.body` | rw (post_script) | Already parsed if JSON, otherwise a string |
+| | `.headers` | read-only | `Record<string,string>` |
+| | `.cookies` | read-only | `Record<string,{value:string,...}>` |
+| | `.time` | read-only | Response time, ms |
+| | `.size` | read-only | Response size, bytes |
+| `voiden.env.get(key)` | — | read-only | Active environment value |
+| `voiden.variables.get(key)` | — | read | Runtime variable (synchronous) |
+| `voiden.variables.set(key, value)` | — | write | Persists across requests — use `{{process.key}}` (not `{{key}}`) to read it outside a script |
+| `voiden.log(...args)` | — | — | Logs at `log` level |
+| `voiden.log(level, ...args)` | — | — | `level` one of `log`/`info`/`debug`/`warn`/`error` |
+| `voiden.assert(actual, operator, expected, message?)` | — | — | Records one structured assertion — see the full operator table below |
+| `voiden.cancel()` | — | — | Cancels the pending request — pre_script only |
+
+There is no `voiden.request.cookies`, no outbound-fetch primitive (`pm.sendRequest`'s equivalent doesn't exist), no test-grouping/iteration/visualizer objects, and no `unset`/`remove`/`clear` operations on variables or headers — only get/set and push. Keep this in mind when deciding whether a `pm.*` call has a real target: if it isn't in the table above, it doesn't exist in `voiden.*`, full stop — don't approximate it onto something adjacent unless a specific row below says to.
+
+#### voiden.assert — every operator, and which Chai matcher(s) reach it
+
+| Operator group | Semantics | Chai matcher(s) that translate to it |
+|---|---|---|
+| `"=="` / `"eq"` / `"equal"` | Loose equality (`actual == expected`) | `.to.eql(y)` |
+| `"==="` | Strict equality (`actual === expected`) | `.to.equal(y)`, `.to.be.null` (against literal `null`), `.to.be.undefined` (against literal `undefined`) |
+| `"!="` / `"!=="` / `"neq"` / `"notequal"` | Not equal / strict not equal | `.to.not.eql(y)` → `"!="`; `.to.not.equal(y)` → `"!=="`; `.to.not.be.null` → `"!=="` against `null`; `.to.not.be.undefined` → `"!=="` against `undefined` |
+| `">"` / `"greater"` / `"greaterthan"` | Numeric greater than | `.to.be.above(y)` / `.to.be.greaterThan(y)` |
+| `">="` / `"gte"` | Greater than or equal | `.to.be.at.least(y)` / `.to.be.gte(y)`; also the lower bound of `.to.be.within(min,max)` / `.to.be.closeTo(expected,delta)` |
+| `"<"` / `"less"` / `"lessthan"` | Numeric less than | `.to.be.below(y)` / `.to.be.lessThan(y)` |
+| `"<="` / `"lte"` | Less than or equal | `.to.be.at.most(y)` / `.to.be.lte(y)`; also the upper bound of `.to.be.within(min,max)` / `.to.be.closeTo(expected,delta)` |
+| `"contains"` / `"includes"` | `actual.includes(String(expected))` if `actual` is a string; `actual.includes(expected)` if `actual` is an array | `.to.include(y)` / `.to.contain(y)`; also `.to.be.oneOf([...])`, reversed — the options array is passed as `actual`, the checked value as `expected` |
+| `"matches"` / `"regex"` | `new RegExp(String(expected)).test(String(actual))` — `expected` must be the regex's **plain source text**, no `/.../ ` delimiters and no flags | `.to.match(/pattern/)` — **only** when the argument is a literal, flag-less regex; a flagged regex (`/foo/i`) or a variable holding a `RegExp` object can't be translated (see below) |
+| `"truthy"` | `Boolean(actual)` | `.to.be.true` / `.to.be.ok`; also `.to.have.property(key)` (approximated) |
+| `"falsy"` | `!actual` | `.to.be.false`; also `.to.not.have.property(key)` (approximated) |
+
+Two matchers have no single operator and expand into **two** `voiden.assert` calls instead: `.to.be.within(min, max)` → `>=` min **and** `<=` max; `.to.be.closeTo(expected, delta)` → `>=` (expected − delta) **and** `<=` (expected + delta), with the arithmetic written into the generated code itself, not computed ahead of time.
+
+#### Safe to translate: variables & field access
 
 | Postman | Voiden | Notes |
 |---|---|---|
@@ -128,16 +165,49 @@ Postman scripts use the `pm.*` sandbox API; Voiden scripts use `voiden.*`/`vd.*`
 | `pm.response.headers.get(name)` | `voiden.response.headers[name]` | |
 | `pm.request.headers.add(...)`, `.url`, `.method`, `.body.raw` | `voiden.request.headers.push(...)`, `.url`, `.method`, `.body` | |
 | `console.log(...)` | `voiden.log(...)` | |
-| `pm.test(name, function(){ ... })` wrapper | *(dropped — assertions become flat top-level `voiden.assert` calls; Voiden has no test-grouping wrapper)* | |
+
+#### Safe to translate: assertions
+
+| Postman | Voiden | Notes |
+|---|---|---|
+| `pm.test(name, function(){ ... })` wrapper | *(dropped — assertions become flat top-level `voiden.assert` calls; Voiden has no test-grouping wrapper)* | The wrapper's `name` string isn't discarded, though — it's threaded through as the `message` argument on every `voiden.assert` call generated from statements inside that block (multiple assertions in one `pm.test` all share that same name as their message). A bare assertion outside any `pm.test(...)` wrapper gets no message argument. |
 | `pm.expect(x).to.eql(y)` / `.equal(y)` | `voiden.assert(x, "==", y)` / `voiden.assert(x, "===", y)` | |
 | `pm.expect(x).to.be.above/below/at.least/at.most(y)` | `voiden.assert(x, ">"/"<"/">="/"<=", y)` | Also `.greaterThan`/`.lessThan`/`.gte`/`.lte` spellings. |
+| `pm.expect(x).to.be.within(min, max)` | `voiden.assert(x, ">=", min)` **and** `voiden.assert(x, "<=", max)` (two calls) | The common `.to.be.within(200, 299)` status-range idiom translates this way. The negated form (`.to.not.within(...)`) does **not** translate — that's an OR of two conditions, which two independent `voiden.assert` calls can't express. |
+| `pm.expect(x).to.be.closeTo(expected, delta)` | `voiden.assert(x, ">=", expected-delta)` **and** `voiden.assert(x, "<=", expected+delta)` (two calls) | Same two-call shape as `.within`, with the bounds written as `(expected) - (delta)` / `(expected) + (delta)` in the generated code. |
 | `pm.expect(x).to.include/contain(y)` | `voiden.assert(x, "contains", y)` | |
 | `pm.expect(x).to.be.true/.ok` / `.to.be.false` | `voiden.assert(x, "truthy")` / `voiden.assert(x, "falsy")` | |
+| `pm.expect(x).to.be.null` / `.to.not.be.null` | `voiden.assert(x, "===", null)` / `voiden.assert(x, "!==", null)` | Strict — matches Chai's own strict `null` check exactly. |
+| `pm.expect(x).to.be.undefined` / `.to.not.be.undefined` | `voiden.assert(x, "===", undefined)` / `voiden.assert(x, "!==", undefined)` | |
+| `pm.expect(x).to.exist` / `.to.not.exist` | `voiden.assert(x, "!=", null)` / `voiden.assert(x, "==", null)` | Chai's `.exist` means "not null AND not undefined" — expressed exactly with **loose** `!=`/`==` against `null`, since JS's loose equality treats `null == undefined` as true. |
+| `pm.expect(x).to.be.a("string"\|"number"\|"boolean"\|"function"\|"undefined"\|"bigint"\|"symbol")` | `voiden.assert(typeof (x), "==", "typename")` | Only this exact allowlist of `typeof`-safe type names translates — `"array"`/`"object"`/`"null"`/`"date"` etc. do **not**, because `typeof` can't distinguish them (`typeof [] === typeof {} === "object"`); those fall back to commented rather than risk a wrong check. |
+| `pm.expect(x).to.have.lengthOf(n)` | `voiden.assert((x).length, "==", n)` | Exact for both strings and arrays — both carry a real `.length`. |
+| `pm.expect(x).to.be.oneOf([...])` | `voiden.assert([...], "contains", x)` | Sides swap: the options array becomes `voiden.assert`'s `actual`, the checked value becomes its `expected` — matches the `"contains"` operator's array-membership behavior exactly. |
 | `pm.response.to.have.status(n)` (Postman shorthand) | `voiden.assert(voiden.response.status, "==", n)` | |
+| `pm.response.to.be.json` (Postman shorthand, bare property access) | `voiden.assert(voiden.response.headers["content-type"], "contains", "json")` | Approximated as a Content-Type check rather than re-parsing the body — Voiden's `voiden.response.body` is already parsed if JSON, so there's nothing left to validate there. |
+| `pm.expect(x).to.(not.)have.property(key)` | `voiden.assert((x)[key], "truthy")` / `voiden.assert((x)[key], "falsy")` | Approximated via truthiness of the bracket access, since there's no dedicated "has property" operator. Not exact — a property present but holding a falsy value (`0`, `""`, `false`) reads as "missing" — but right for the common case of checking a key exists on a JSON body. |
+| `pm.expect(x).to.match(/pattern/)` | `voiden.assert(x, "matches", "pattern")` | Only when the argument is a **literal, flag-less** regex (`/pattern/`, no `/pattern/i`). The `"matches"` operator does `new RegExp(String(expected)).test(...)`, so `expected` must be the plain pattern text — the delimiters and any flags get stripped when translating. |
 
-**Never translate, always leave commented:** `pm.expect(x).to.match(regex)` (voiden.assert's exact handling of a RegExp value for `"matches"` isn't confirmed — guessing wrong here is worse than leaving it commented), `.to.have.property/lengthOf/be.a(...)`/other type-or-shape matchers (no `voiden.assert` equivalent exists), `pm.sendRequest(...)` (no outbound-fetch primitive in Voiden's scripting API), any control flow (`if`/`for`/`while`), custom helper functions, or anything else not in the table above.
+**Never translate, always leave commented** — with the specific reason, so you're not guessing case-by-case:
+
+| Pattern | Why it doesn't translate |
+|---|---|
+| `.to.match(/pattern/i)` or any flagged regex, or `.to.match(aVariable)` | `voiden.assert`'s `"matches"` operator has no way to carry regex flags through, and a non-literal argument might be a `RegExp` object whose `String(...)` form includes `/.../ ` delimiters that would corrupt the pattern. |
+| `.to.not.be.within(...)` / `.to.not.match(...)` | Negating a range or regex check is an OR of two conditions ("below min OR above max") — two independent `voiden.assert` calls can only express AND, not OR. |
+| `.to.be.a("array")` / `.to.be.an("object")` / `.to.be.a("date")` | `typeof` can't distinguish arrays, plain objects, dates, or `null` from each other or from a generic object — only the allowlisted primitive type names above are safe. |
+| `.to.have.property("key", value)` (the two-argument form checking both existence *and* value) | Only the one-argument existence-check form (`.to.have.property("key")`) translates; the two-argument form's exact-value semantics aren't captured by the truthy/falsy approximation. |
+| `.to.have.keys(...)` / `.to.have.all.keys(...)` / `.to.have.members([...])` / `.to.include.members([...])` | Set-equality/membership across *multiple* values at once — no `voiden.assert` operator expresses this. |
+| `.to.throw(...)` | Chai's `.throw` wraps a function call and checks it throws — meaningless here, since a translated statement is a value expression, not a deferred function call. |
+| `.to.be.instanceOf(SomeClass)` / `.to.respondTo(...)` / `.to.satisfy(fn)` | No class registry or predicate-function support exists in this mechanical, line-by-line translator. |
+| `.to.change(...)` / `.to.increase(...)` / `.to.decrease(...)` | Needs a before/after invocation pair around a function call — not expressible as a single flat assertion. |
+| `.to.be.empty` | Ambiguous target — Chai's `.empty` means length-0 for strings/arrays but "no own enumerable properties" for plain objects; a single translation can't safely cover both without knowing the runtime type. |
+| `pm.sendRequest(...)` | No outbound-fetch primitive in `voiden.*` scripting. |
+| `pm.request.headers.get/has/remove/upsert(...)`, `pm.response.headers.has/all(...)`, `pm.cookies.*`, `pm.environment.unset/clear(...)`, `pm.variables.unset(...)`, `pm.info.*`, `pm.iterationData.*`, `pm.execution.*`, `pm.visualizer.*` | None of these have a `voiden.*` equivalent — no removal/unset operations exist on variables or headers (only get/set/push), no cookie-jar object beyond the read-only `voiden.response.cookies`, no request-metadata, iteration-data, runner-flow-control, or response-visualization API. |
+| Any control flow (`if`/`for`/`while`/`switch`), custom helper functions, or anything else not in a table above | Out of scope for a line-by-line mechanical translator — this isn't a JS parser. |
 
 A `pm.*` call nested *inside* an assertion's expression (e.g. `pm.expect(x).to.eql(pm.environment.get("y"))`) is fine — the variable/field substitutions apply anywhere in an expression, not just as a whole statement. But the reverse check matters too: if a captured expression still contains an untranslated `pm.*` call after substitution (something not in the table, e.g. `pm.response.headers.has(...)`), that specific line — and therefore the whole script — must fall back to commented, not ship with a leftover `pm.*` reference inside otherwise-live code.
+
+A plain `require('moment')`/`require('lodash')`-style call (common in real Postman scripts for date formatting etc.) is **not** a reason to fall back — Voiden's JavaScript scripting engine runs each script in a real Node.js subprocess rooted at the active project directory, so `require(...)` resolves exactly as it would in any Node script, against that project's own `node_modules`. Leave it as-is when translating the rest of the script live; whether that specific package is actually installed is a normal runtime concern for the user (`npm install` it in the project), not a translation-safety one.
 
 ### Placing a section's documentation
 

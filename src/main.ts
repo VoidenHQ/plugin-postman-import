@@ -35,13 +35,20 @@ const postmanImportPlugin = (context: PluginContext) => {
             showToast,
           }),
         predicate: (tab) => {
-          // Only show for .json files. Postman's format markers ("schema":
-          // "https://schema.getpostman.com/...") always sit in the top-level
-          // "info" block, so sniffing a bounded prefix is enough — this keeps
-          // the cost independent of file size instead of rescanning the full
-          // (potentially multi-hundred-KB) buffer on every render.
+          // Only show for .json files. Postman's actual format markers —
+          // "schema.getpostman.com" (collection, in the top-level "info"
+          // block) or "_postman_variable_scope" (environment export) — are
+          // what we check for, not a bare "postman" substring: a loose word
+          // match false-positives on any non-Postman collection that simply
+          // hits postman-echo.com (Postman's own public test API, commonly
+          // used from Insomnia/Bruno collections too) or otherwise mentions
+          // the word anywhere in a URL, description, or name. Sniffing a
+          // bounded prefix keeps the cost independent of file size instead
+          // of rescanning the full (potentially multi-hundred-KB) buffer on
+          // every render.
           if (!tab.title?.endsWith('.json')) return false;
-          return (tab.content ?? '').slice(0, 65536).indexOf('postman') > -1;
+          const c = (tab.content ?? '').slice(0, 65536);
+          return c.includes('schema.getpostman.com') || c.includes('_postman_variable_scope');
         },
       });
 
